@@ -1,9 +1,9 @@
 # import gym
-import gymnasium as gym
 # import gymnasium_robotics
 
 # gym.register_envs(gymnasium_robotics)
 
+import gymnasium as gym
 import numpy as np
 import imageio
 
@@ -71,8 +71,8 @@ def main():
         #         replay_buffer_kwargs=dict(
         #             n_sampled_goal=n_sampled_goal,
         #             goal_selection_strategy="future",
-        #             # max_episode_steps=100,
-        #             # online_sampling=True,
+        #             max_episode_steps=100,
+        #             online_sampling=True,
         #         ),
         #         verbose=1,
         #         buffer_size=int(1e6),
@@ -83,8 +83,8 @@ def main():
         #         action_noise=action_noise,
         # )
 
-    model.learn(int(2e2))
-    model.save(f"her_ddpg_{ENV}")
+    model.learn(int(2e5))
+    model.save(f"ddpg_{ENV}")
 
     # Evaluate the model every 1000 steps on 5 test episodes
     # and save the evaluation to the "logs/" folder
@@ -94,7 +94,7 @@ def main():
     # load saved model
     # Because it needs access to `env.compute_reward()`
     # HER must be loaded with the env
-    model = DDPG.load(f"her_ddpg_{ENV}", env=env)
+    model = DDPG.load(f"ddpg_{ENV}", env=env)
 
     # train again
     # model.learn(int(1e4))
@@ -146,7 +146,7 @@ def main():
     vec_env = VecVideoRecorder(vec_env, video_folder,
                            record_video_trigger=lambda x: x == 0,
                            video_length=video_length,
-                           name_prefix=f"her-ddpg-{ENV}")
+                           name_prefix=f"ddpg-{ENV}")
     vec_env.reset()
 
     for _ in range(video_length + 1):

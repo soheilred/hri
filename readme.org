@@ -1,0 +1,197 @@
+* Introduction
+In my current field of Computer Vision, particularly in Object Detection,
+operating within a simulated environment poses certain challenges. These
+challenges, including but not limited to utilizing pre-labeled datasets for
+training ML models or setting up an environment with adequate objects for the
+robot to detect the goal accurately can be notably demanding. As a result, I
+have put together this document to outline an unsupervised robotic manipulation
+task.
+
+As the given challenge revolves more around the ability of the candidate to
+work with a robotic simulation platform, I decided to use an RL-base algorithm
+called Deep Deterministic Policy Gradient (DDPG) to train an agent to control
+the system's actuators towards a goal.
+
+This documentation describes a Python script that trains an agent using the
+algorithm in an environment provided by OpenAI Gym. The script employs the
+Stable Baselines3 library for reinforcement learning and training tasks.
+
+This document outlines and explains the required step to train an agent to
+control the inverted pendulum in an upright position using a simulated
+environment provided by the OpenAI Gym module. The agent uses the
+=stable_baseline3= library to learn the task, that is creating a policy that given
+a state is able to lead the system towards an optimal point.
+
+I encourage you to explore my other repositories to observe my capabilities in
+training Deep Neural Networks for a wide range of Computer Vision tasks,
+including Image Classification and Object Detection.
+
+- [[https://github.com/soheilred/FogGuard][Object Detection Under Adverse Weather Condition]]
+- [[https://github.com/soheilred/InCoP][How to Efficiently Search for Sparse Networks?]]
+
+In addition, you can find my repository corresponding to the Human-Computer
+Interactions course project in [[https://github.com/soheilred/hri/tree/main/src][here]], where I explored various environment and RL
+methods to find the best algorithm for our project.
+
+** Task Definition
+The chosen task for training the robot involves controlling the Inverted
+Pendulum in the InvertedPendulum-v5 environment. The task of balancing an
+inverted pendulum is a classic problem in control theory and robotics. It
+involves keeping a pendulum in an upright position by applying appropriate
+control actions. This task is relevant to robotics as it represents a
+fundamental problem in designing stabilizing control algorithms for various
+robotic systems.
+
+* Libraries
+- gym: OpenAI Gym provides a wide range of environments for reinforcement learning.
+- imageio: A library for reading and writing image data to produce the video.
+- stable_baselines3: A reinforcement learning library that implements various algorithms and tools for training agents.
+- stable_baselines3.common: Contains common functionalities for training agents, such as noise generation and environment checking.
+
+
+** Import Modules
+Now, let's import all the required libraries
+#+begin_src python :results output
+import gymnasium as gym
+import numpy as np
+import imageio
+
+from stable_baselines3 import HerReplayBuffer, SAC, DDPG, TD3
+from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.vec_env import VecVideoRecorder, DummyVecEnv
+#+end_src
+
+* Algorithm & Training
+- The main() function is the entry point of the script and contains the training
+  logic for the robot.
+- The DDPG model is trained for a set number of steps, saved, and then evaluated.
+- The script also includes functionality to record and save a video of the
+  trained agent's performance in the environment utilizing the VecVideoRecorder
+  to capture the video. 
+  
+** Environment
+#+begin_src python :results output
+ENV = "InvertedPendulum-v5"
+env = gym.make(ENV, render_mode="rgb_array")
+
+# wrap the environment
+# env = CustomWrapper(env)
+# check_env(env)
+
+# The noise objects for DDPG
+n_actions = env.action_space.shape[-1]
+action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+#+end_src
+
+*** Custom Environment
+If you are interested into more refined and customized environments, you can use
+the =CustomWrapper= object. I personally did not use it in my training. However,
+the lines are left in the code commented so that a curious user is able to use it.
+#+begin_src python :results output
+class CustomWrapper(gym.Wrapper):
+    """
+    :param env: (gym.Env) Gym environment that will be wrapped
+    """
+    def __init__(self, env, max_steps=100):
+    # Call the parent constructor, so we can access self.env later
+        super(CustomWrapper, self).__init__(env)
+        self.max_steps = max_steps
+        self.current_step = 0
+
+    def reset(self):
+        obs = self.env.reset()
+        self.current_step = 0
+        obs['desired_goal'] = np.array([1.3, .7, .5], dtype=float) # + 0.001 * np.ones(3) * self.current_step
+        return obs
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return obs, reward, done, info
+
+    def step_to_goal(self, action):
+        self.current_step += 1
+        T = 50
+        obs, reward, done, info = self.env.step(action)
+        # read the human arm (LRSP) pose based on time
+        obs['desired_goal'] += 0.1 * np.array([np.cos(3 / T * self.current_step),
+                                                 np.sin(3 / T * self.current_step), 0])
+        if self.current_step >= self.max_steps:
+            done = True
+            info['time_limit_reached'] = True
+        return obs, reward, done, info
+
+
+#+end_src
+
+** Model & Training
+The following block first creates a DDPG object using the defined environment
+and the observation noise, and calls the =learn= function that trains the model to
+be able to obtain the optimal policy. At the end, we =save= the model in the
+current directory for later use.
+
+#+begin_src python :results output
+model = DDPG("MlpPolicy", env, action_noise=action_noise, verbose=1)
+train_epoch = int(2e5) 
+model.learn(train_epoch)
+model.save(f"ddpg_{ENV}")
+#+end_src
+
+Please note that the chosen =train_epoch= value has direct impact on the
+performance of the policy, as we are giving more time to the model to learn the
+dynamic of the system. I was able to obtain a somewhat satisfactory result using
+=200000= steps.
+
+Also, the use of DDPG as the learning algorithm was a design choice and not a
+necessity for this project. Due to the simplicity of the project, it can be
+solve using lighter and less involved techniques. We can choose a better
+algorithm that is more aligned with the requirement of our specific project by
+looking at stable_baselines  module.
+
+** Observing the performance in real-time
+#+begin_src python :results output
+obs, _ = env.reset()
+
+# Evaluate the agent
+episode_reward = 0
+for _ in range(10):
+    # import ipdb; ipdb.set_trace()
+    action, _states = model.predict(obs)
+    obs, reward, done, info, _ = env.step(action)
+    env.render()
+#+end_src
+
+** Creating the Video
+We can use the =VecEnv= object of =stable_baseline3= to parallelize the processes
+and simulate and record a video at the same time.
+
+#+begin_src python :results output
+video_folder = 'videos/'
+video_length = 100
+
+vec_env = DummyVecEnv([lambda: gym.make(ENV, render_mode="rgb_array")])
+
+obs = vec_env.reset()
+# # Record the video starting at the first step
+vec_env = VecVideoRecorder(vec_env, video_folder,
+                        record_video_trigger=lambda x: x == 0,
+                        video_length=video_length,
+                        name_prefix=f"ddpg-{ENV}")
+vec_env.reset()
+
+for _ in range(video_length + 1):
+    action = model.predict(obs[0])
+    obs, _, _, _ = vec_env.step(action)
+
+# Save the video
+env.close()
+#+end_src
+
+* Execution
+To run the script:
+1. Ensure that all required libraries are installed.
+2. Execute the script by running the
+#+begin_src sh :results output
+python ddpg-video.py
+#+end_src
+
