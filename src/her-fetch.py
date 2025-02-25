@@ -1,4 +1,9 @@
-import gym
+# import gym
+import gymnasium as gym
+# import gymnasium_robotics
+
+# gym.register_envs(gymnasium_robotics)
+
 import numpy as np
 import imageio
 
@@ -42,39 +47,44 @@ class CustomWrapper(gym.Wrapper):
 
 
 def main():
-    env = gym.make("FetchReach-v1")
+    # env = gym.make("LunarLander-v3", render_mode="human")
+
+    ENV = "InvertedPendulum-v5"
+    env = gym.make(ENV) #, render_mode="rgb_array")
+    # env = gym.make("FetchReach-v1")
     # wrap the environment
-    env = CustomWrapper(env)
+    # env = CustomWrapper(env)
     # check_env(env)
 
     # Create 4 artificial transitions per real transition
-    n_sampled_goal = 4
+    # n_sampled_goal = 4
 
     # The noise objects for DDPG
     n_actions = env.action_space.shape[-1]
     action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+    model = DDPG("MlpPolicy", env, action_noise=action_noise, verbose=1)
 
     # DDPG hyperparams:
-    model = DDPG( "MultiInputPolicy",
-                env,
-                replay_buffer_class=HerReplayBuffer,
-                replay_buffer_kwargs=dict(
-                    n_sampled_goal=n_sampled_goal,
-                    goal_selection_strategy="future",
-                    max_episode_length=100,
-                    online_sampling=True,
-                ),
-                verbose=1,
-                buffer_size=int(1e6),
-                learning_rate=1e-3,
-                gamma=0.99,
-                batch_size=256,
-                policy_kwargs=dict(net_arch=[256, 256, 256]),
-                action_noise=action_noise,
-        )
+    # model = DDPG( "MultiInputPolicy"# ,
+        #         env,
+        #         replay_buffer_class=HerReplayBuffer,
+        #         replay_buffer_kwargs=dict(
+        #             n_sampled_goal=n_sampled_goal,
+        #             goal_selection_strategy="future",
+        #             # max_episode_steps=100,
+        #             # online_sampling=True,
+        #         ),
+        #         verbose=1,
+        #         buffer_size=int(1e6),
+        #         learning_rate=1e-3,
+        #         gamma=0.99,
+        #         batch_size=256,
+        #         policy_kwargs=dict(net_arch=[256, 256, 256]),
+        #         action_noise=action_noise,
+        # )
 
-    # model.learn(int(2e5))
-    # model.save("her_ddpg_fetchreach")
+    model.learn(int(2e2))
+    model.save(f"her_ddpg_{ENV}")
 
     # Evaluate the model every 1000 steps on 5 test episodes
     # and save the evaluation to the "logs/" folder
@@ -84,7 +94,7 @@ def main():
     # load saved model
     # Because it needs access to `env.compute_reward()`
     # HER must be loaded with the env
-    model = DDPG.load("her_ddpg_fetchreach", env=env)
+    model = DDPG.load(f"her_ddpg_{ENV}", env=env)
 
     # train again
     # model.learn(int(1e4))
@@ -106,18 +116,17 @@ def main():
     # you cannot continue training afterward
     # policy = model.policy
 
-    obs = env.reset()
+    obs = env.reset()[0]
 
     # Evaluate the agent
     episode_reward = 0
-    for _ in range(1000):
-        action, _ = model.predict(obs)
-        obs, reward, done, info = env.step_to_goal(action)
+    for _ in range(10):
         # import ipdb; ipdb.set_trace()
-        # print(obs['achieved_goal'])
-        # print(obs['desired_goal'])
-        # print(action)
-        env.render()
+        action, _states = model.predict(obs)
+        obs, reward, done, info, _ = env.step(action)
+
+        # uncomment if you want to watch the video as the code runs
+        # env.render()
         # episode_reward += reward
         # if done or info.get("is_success", False):
         #     print("Reward:", episode_reward, "Success?",
@@ -127,21 +136,26 @@ def main():
 
 
     # env_id = "FetchReach-v1"
-    # video_folder = 'videos/'
-    # video_length = 100
+    video_folder = 'videos/'
+    video_length = 100
 
-    # env = DummyVecEnv([lambda: gym.make(env_id)])
+    vec_env = DummyVecEnv([lambda: gym.make(ENV, render_mode="rgb_array")])
+
+    obs = vec_env.reset()
     # # Record the video starting at the first step
-    # env = VecVideoRecorder(env, video_folder,
-    #                        record_video_trigger=lambda x: x == 0,
-    #                        video_length=video_length,
-    #                        name_prefix=f"her-ddpg-{env_id}")
-    # obs = env.reset()
-    # for _ in range(video_length + 1):
-    #     action = [model.predict(obs)]
-    #     obs, _, _, _ = env.step(action)
-    # # Save the video
-    # env.close()
+    vec_env = VecVideoRecorder(vec_env, video_folder,
+                           record_video_trigger=lambda x: x == 0,
+                           video_length=video_length,
+                           name_prefix=f"her-ddpg-{ENV}")
+    vec_env.reset()
+
+    for _ in range(video_length + 1):
+        # import ipdb; ipdb.set_trace()
+        action = model.predict(obs[0])
+        obs, _, _, _ = vec_env.step(action)
+        # vec_env.render()
+    # Save the video
+    env.close()
 
     # images = []
     # obs = model.env.reset()
